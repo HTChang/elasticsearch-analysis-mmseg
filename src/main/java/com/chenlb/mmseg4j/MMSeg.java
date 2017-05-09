@@ -19,6 +19,7 @@ public class MMSeg {
 	private Seg seg;
 	
 	private StringBuilder bufSentence = new StringBuilder(256);
+	private StringBuilder bufWholeSentence = new StringBuilder(256);
 	private Sentence currentSentence;
 	private Queue<Word> bufWord;	// word 缓存, 因为有 chunk 分析三个以上.
     private int readedIdx = 0;
@@ -34,12 +35,14 @@ public class MMSeg {
 		currentSentence = null;
 		bufWord = new LinkedList<Word>();
 		bufSentence.setLength(0);
+		bufWholeSentence.setLength(0);
 		readedIdx = -1;
 	}
 	
 	private int readNext() throws IOException {
 		int d = reader.read();
 		if(d > -1) {
+			bufWholeSentence.appendCodePoint(d);
 			readedIdx++;
 			d = Character.toLowerCase(d);
 		}
@@ -47,11 +50,20 @@ public class MMSeg {
 	}
 	
 	private void pushBack(int data) throws IOException {
+		bufWholeSentence.deleteCharAt(bufWholeSentence.length() - 1);
 		readedIdx--;
 		reader.unread(data);
 	}
 
-	
+	private Word getWholeSentenceAsWord() {
+		if (bufWholeSentence.length() == 0) {
+			return null;
+		}
+		Sentence whole = createSentence(bufWholeSentence);
+		bufWholeSentence.setLength(0);
+		return new Word(whole.getText(), 0, Word.TYPE_WORD);
+	}
+
 	public Word next() throws IOException {
 		//先从缓存中取
 		Word word = bufWord.poll();;
@@ -188,7 +200,11 @@ public class MMSeg {
 			
 			word = bufWord.poll();
 		}
-		
+
+		if (word == null) {
+			word = getWholeSentenceAsWord();
+		}
+
 		return word;
 	}
 	
@@ -242,9 +258,9 @@ public class MMSeg {
 		int transform(int codePoint) {
 			return toAscii(codePoint);
 		}
-		
+
 	}
-	
+
 	/**读取字母或数字*/
 	private static class ReadCharByAsciiOrDigit extends ReadCharDigit {
 
@@ -258,7 +274,7 @@ public class MMSeg {
 			return hasDigit;
 		}
 	}
-	
+
 	/**读取字母*/
 	@SuppressWarnings("unused")
 	private static class ReadCharByAscii extends ReadCharDigit {
@@ -266,25 +282,25 @@ public class MMSeg {
 			return isAsciiLetter(codePoint);
 		}
 	}
-	
+
 	/**读取俄语*/
 	private static class ReadCharByRussia extends ReadCharDigit {
 
 		boolean isRead(int codePoint) {
 			return isRussiaLetter(codePoint);
 		}
-		
+
 	}
-	
+
 	/**读取希腊 */
 	private static class ReadCharByGreece extends ReadCharDigit {
 
 		boolean isRead(int codePoint) {
 			return isGreeceLetter(codePoint);
 		}
-		
+
 	}
-	
+
 	/**读取指定类型的字符*/
 	private static class ReadCharByType extends ReadChar {
 		int charType;
@@ -296,33 +312,33 @@ public class MMSeg {
 			int type = Character.getType(codePoint);
 			return type == charType;
 		}
-		
+
 	}
-	
+
 	private Word createWord(StringBuilder bufSentence, String type) {
 		return new Word(toChars(bufSentence), startIdx(bufSentence), type);
 	}
-	
+
 	private Word createWord(StringBuilder bufSentence, int startIdx, String type) {
 		return new Word(toChars(bufSentence), startIdx, type);
 	}
-	
+
 	private Sentence createSentence(StringBuilder bufSentence) {
 		return new Sentence(toChars(bufSentence), startIdx(bufSentence));
 	}
-	
+
 	/**取得 bufSentence 的第一个字符在整个文本中的位置*/
 	private int startIdx(StringBuilder bufSentence) {
 		return readedIdx - bufSentence.length() + 1;
 	}
-	
+
 	/**从 StringBuilder 里复制出 char[] */
 	private static char[] toChars(StringBuilder bufSentence) {
 		char[] chs = new char[bufSentence.length()];
 		bufSentence.getChars(0, bufSentence.length(), chs, 0);
 		return chs;
 	}
-	
+
 	/**
 	 * 双角转单角
 	 */
@@ -335,15 +351,15 @@ public class MMSeg {
 		}
 		return codePoint;
 	}
-	
+
 	private static boolean isAsciiLetter(int codePoint) {
 		return (codePoint >= 'A' && codePoint <= 'Z') || (codePoint >= 'a' && codePoint <= 'z');
 	}
-	
+
 	private static boolean isRussiaLetter(int codePoint) {
 		return (codePoint >= 'А' && codePoint <= 'я') || codePoint=='Ё' || codePoint=='ё';
 	}
-	
+
 	private static boolean isGreeceLetter(int codePoint) {
 		return (codePoint >= 'Α' && codePoint <= 'Ω') || (codePoint >= 'α' && codePoint <= 'ω');
 	}
@@ -354,7 +370,7 @@ public class MMSeg {
 	 * 
 	 */
 	private static enum NationLetter {EN, RA, GE, UNKNOW};
-	
+
 	private NationLetter getNation(int codePoint) {
 		if(isAsciiLetter(codePoint)) {
 			return NationLetter.EN;
@@ -367,7 +383,7 @@ public class MMSeg {
 		}
 		return NationLetter.UNKNOW;
 	}
-	
+
 	@SuppressWarnings("unused")
 	private static boolean isCJK(int type) {
 		return type == Character.OTHER_LETTER;
